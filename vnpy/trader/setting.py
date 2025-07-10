@@ -30,6 +30,7 @@ SETTINGS: dict = {
 
     "database.timezone": get_localzone_name(),
     "database.name": "sqlite",
+    "database.uri": "",
     "database.database": "database.db",
     "database.host": "",
     "database.port": 0,

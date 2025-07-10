@@ -9,7 +9,7 @@ from threading import Thread
 from time import sleep
 from typing import Any
 
-
+EVENT_TICK_UNSUB = "eTickUnSub."
 EVENT_TIMER = "eTimer"
 
 

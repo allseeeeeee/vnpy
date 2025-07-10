@@ -21,7 +21,7 @@ from ..event import (
     EVENT_ORDER,
     EVENT_POSITION,
     EVENT_ACCOUNT,
-    EVENT_LOG
+    EVENT_LOG, EVENT_TICK_UNSUB
 )
 from ..object import (
     OrderRequest,
@@ -246,6 +246,9 @@ class BaseMonitor(QtWidgets.QTableWidget):
         self.event_engine: EventEngine = event_engine
         self.cells: dict[str, dict] = {}
 
+        self._context_menu_data = None
+        self._context_menu_item = None
+
         self.init_ui()
         self.load_setting()
         self.register_event()
@@ -282,6 +285,31 @@ class BaseMonitor(QtWidgets.QTableWidget):
         save_action: QtGui.QAction = QtGui.QAction(_("保存数据"), self)
         save_action.triggered.connect(self.save_csv)
         self.menu.addAction(save_action)
+
+        if isinstance(self, TickMonitor):
+            subscribe_action: QtGui.QAction = QtGui.QAction(_("取消订阅行情"), self)
+            subscribe_action.triggered.connect(self.unsubscribe)
+            self.menu.addAction(subscribe_action)
+        else:
+            subscribe_action: QtGui.QAction = QtGui.QAction(_("订阅行情"), self)
+            subscribe_action.triggered.connect(self.subscribe)
+            self.menu.addAction(subscribe_action)
+
+
+    def subscribe(self) -> None:
+        if self._context_menu_data:
+            req: SubscribeRequest = SubscribeRequest(
+                symbol=self._context_menu_data.symbol, exchange=Exchange(self._context_menu_data.exchange)
+            )
+            self.main_engine.subscribe(req, self._context_menu_data.gateway_name)
+
+
+    def unsubscribe(self) -> None:
+        if self._context_menu_data:
+            req: SubscribeRequest = SubscribeRequest(
+                symbol=self._context_menu_data.symbol, exchange=Exchange(self._context_menu_data.exchange)
+            )
+            self.main_engine.unsubscribe(req, self._context_menu_data.gateway_name)
 
     def register_event(self) -> None:
         """
@@ -387,6 +415,11 @@ class BaseMonitor(QtWidgets.QTableWidget):
         """
         Show menu with right click.
         """
+        item = self.itemAt(event.pos())
+        self._context_menu_item = item
+        if item and isinstance(item, BaseCell):
+            self._context_menu_data = item.get_data()
+
         self.menu.popup(QtGui.QCursor.pos())
 
     def save_setting(self) -> None:
@@ -429,6 +462,18 @@ class TickMonitor(BaseMonitor):
         "datetime": {"display": _("时间"), "cell": TimeCell, "update": True},
         "gateway_name": {"display": _("接口"), "cell": BaseCell, "update": False},
     }
+
+    def unsubscribe(self) -> None:
+        """
+        Cancel subscribe on a specific instrument.
+        """
+        super().unsubscribe()
+        if self._context_menu_item:
+            key: str = self._context_menu_data.__getattribute__(self.data_key)
+            if key in self.cells:
+                self.cells.pop(key)
+            row_index = self.row(self._context_menu_item)
+            self.removeRow(row_index)
 
 
 class LogMonitor(BaseMonitor):
@@ -663,6 +708,8 @@ class ConnectDialog(QtWidgets.QDialog):
         form.addRow(button)
 
         self.setLayout(form)
+        self.setMinimumSize(400, 300)
+        self.adjustSize()
 
     def connect_gateway(self) -> None:
         """
@@ -857,11 +904,16 @@ class TradingWidget(QtWidgets.QWidget):
         """"""
         self.signal_tick.connect(self.process_tick_event)
         self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
+        self.event_engine.register(EVENT_TICK_UNSUB, self.signal_tick.emit)
 
     def process_tick_event(self, event: Event) -> None:
         """"""
         tick: TickData = event.data
         if tick.vt_symbol != self.vt_symbol:
+            return
+
+        if event.type == EVENT_TICK_UNSUB:
+            self.clear_label_text()
             return
 
         price_digits: int = self.price_digits
@@ -1103,7 +1155,7 @@ class ContractManager(QtWidgets.QWidget):
     def init_ui(self) -> None:
         """"""
         self.setWindowTitle(_("合约查询"))
-        self.resize(1000, 600)
+        self.resize(1000, 650)
 
         self.filter_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.filter_line.setPlaceholderText(_("输入合约代码或者交易所，留空则查询所有合约"))
@@ -1132,6 +1184,19 @@ class ContractManager(QtWidgets.QWidget):
         vbox.addWidget(self.contract_table)
 
         self.setLayout(vbox)
+
+        self.setToolTip(_("双击订阅合约"))
+        self.contract_table.itemDoubleClicked.connect(self.subscribe)
+
+    def subscribe(self, cell: BaseCell) -> None:
+        """
+        Cancel order if cell double clicked.
+        """
+        contract: ContractData = cell.get_data()
+        req: SubscribeRequest = SubscribeRequest(
+            symbol=contract.symbol, exchange=Exchange(contract.exchange)
+        )
+        self.main_engine.subscribe(req, contract.gateway_name)
 
     def show_contracts(self) -> None:
         """

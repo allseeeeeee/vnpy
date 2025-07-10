@@ -95,6 +95,7 @@ class BaseGateway(ABC):
         Tick event push.
         Tick event of a specific vt_symbol is also pushed.
         """
+        # print("++++++++", tick)
         self.on_event(EVENT_TICK, tick)
         self.on_event(EVENT_TICK + tick.vt_symbol, tick)
 
@@ -190,6 +191,13 @@ class BaseGateway(ABC):
     def subscribe(self, req: SubscribeRequest) -> None:
         """
         Subscribe tick data update.
+        """
+        pass
+
+    @abstractmethod
+    def unsubscribe(self, req: SubscribeRequest) -> None:
+        """
+        unSubscribe tick data update.
         """
         pass
 
