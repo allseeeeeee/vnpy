@@ -5,8 +5,11 @@ Basic widgets for UI.
 import csv
 import platform
 from enum import Enum
-from typing import cast, Any
+from typing import cast, Any, Callable
 from copy import copy
+
+from PySide6.QtCore import QStringListModel, QTimer
+from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget
 from tzlocal import get_localzone_name
 from datetime import datetime
 from importlib import metadata
@@ -43,6 +46,68 @@ COLOR_SHORT = QtGui.QColor("green")
 COLOR_BID = QtGui.QColor(255, 174, 201)
 COLOR_ASK = QtGui.QColor(160, 255, 160)
 COLOR_BLACK = QtGui.QColor("black")
+
+
+
+class CustomCompleter(QCompleter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+
+    def pathFromIndex(self, index):
+        # 控制实际插入的内容 —— 只返回 symbol 部分
+        text = self.model().data(index, Qt.ItemDataRole.DisplayRole)
+        return text.split(" ")[0].strip()  # 只返回 symbol
+
+
+class SymbolCompleter:
+    def __init__(self, line_edit: QLineEdit, get_all_contracts: Callable[[], list], on_symbol_selected: Callable[[ContractData], None] = None, parent: QWidget = None):
+        self.line_edit = line_edit
+        self.get_all_contracts = get_all_contracts
+        self.on_symbol_selected = on_symbol_selected
+
+        self.model = QStringListModel()
+        self.completer = CustomCompleter(parent)
+        self.completer.setModel(self.model)
+        self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+
+        self.line_edit.setCompleter(self.completer)
+        self.line_edit.textEdited.connect(self.on_text_edited)
+        self.completer.activated.connect(self.on_activated)
+
+        self.filter_contracts: dict[str, ContractData] = {}
+
+    def on_text_edited(self, text: str):
+        text = text.strip().lower()
+        if not text:
+            self.model.setStringList([])
+            return
+
+        all_contracts = self.get_all_contracts()
+        matches = []
+        self.filter_contracts.clear()
+
+        for c in all_contracts:
+            if text in c.symbol.lower() or text in c.name.lower():
+                key = f"{c.symbol} {c.name}" if c.symbol != c.name else c.symbol
+                matches.append(key)
+                self.filter_contracts[key] = c
+                self.filter_contracts[c.symbol] = c  # 允许用户只选 symbol
+
+        self.model.setStringList(matches)
+
+    def on_activated(self, selected: str):
+        contract = self.filter_contracts.get(selected)
+        if contract:
+            QTimer.singleShot(0, lambda: self.line_edit.setText(contract.symbol))
+            if self.on_symbol_selected:
+                QTimer.singleShot(0, lambda: self.on_symbol_selected(contract))
+
+
 
 
 class BaseCell(QtWidgets.QTableWidgetItem):
@@ -767,6 +832,10 @@ class TradingWidget(QtWidgets.QWidget):
 
         self.symbol_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.symbol_line.returnPressed.connect(self.set_vt_symbol)
+        self.symbol_line._completer = SymbolCompleter(line_edit=self.symbol_line,
+                                                      get_all_contracts=self.main_engine.get_all_contracts,
+                                                      on_symbol_selected=self.on_symbol_selected,
+                                                      parent=self)
 
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
@@ -885,6 +954,12 @@ class TradingWidget(QtWidgets.QWidget):
         vbox.addLayout(grid)
         vbox.addLayout(form)
         self.setLayout(vbox)
+
+    def on_symbol_selected(self, contract: ContractData):
+        if contract:
+            QTimer.singleShot(0, lambda: self.name_line.setText(contract.name))
+            QTimer.singleShot(0, lambda: self.exchange_combo.setCurrentText(contract.exchange.value))
+            QTimer.singleShot(10, lambda: self.set_vt_symbol())
 
     def create_label(
         self,
