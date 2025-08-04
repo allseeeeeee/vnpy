@@ -290,7 +290,7 @@ class BaseMonitor(QtWidgets.QTableWidget):
             subscribe_action: QtGui.QAction = QtGui.QAction(_("取消订阅行情"), self)
             subscribe_action.triggered.connect(self.unsubscribe)
             self.menu.addAction(subscribe_action)
-        else:
+        elif isinstance(self, (TradeMonitor, OrderMonitor, PositionMonitor)):
             subscribe_action: QtGui.QAction = QtGui.QAction(_("订阅行情"), self)
             subscribe_action.triggered.connect(self.subscribe)
             self.menu.addAction(subscribe_action)
