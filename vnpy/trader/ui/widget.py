@@ -5,11 +5,12 @@ Basic widgets for UI.
 import csv
 import platform
 from enum import Enum
-from typing import cast, Any, Callable
+from typing import cast, Any, Callable, Union
 from copy import copy
 
-from PySide6.QtCore import QStringListModel, QTimer
-from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget
+from PySide6.QtGui import QColor, QPainter, QBrush
+from PySide6.QtCore import QStringListModel, QTimer, Qt, QPropertyAnimation, QRect, Property
+from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget, QCheckBox, QLabel, QFormLayout, QComboBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox
 from tzlocal import get_localzone_name
 from datetime import datetime
 from importlib import metadata
@@ -47,6 +48,198 @@ COLOR_BID = QtGui.QColor(255, 174, 201)
 COLOR_ASK = QtGui.QColor(160, 255, 160)
 COLOR_BLACK = QtGui.QColor("black")
 
+
+class QSwitch(QCheckBox):
+    def __init__(
+        self,
+        text_on="启用",
+        text_off="关闭",
+        width=48,
+        height=24,
+        checked_color="#4CAF50",
+        bg_color="#CCCCCC",
+        circle_color="#FFFFFF",
+        parent=None
+    ):
+        super().__init__(parent)
+
+        self._circle_pos = 3
+        self._width = width
+        self._height = height
+        self._radius = height // 2
+        self._circle_diameter = height - 6
+        self._bg_color = QColor(bg_color)
+        self._checked_color = QColor(checked_color)
+        self._circle_color = QColor(circle_color)
+        self._text_on = text_on
+        self._text_off = text_off
+
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(width + 60, height)
+
+        # Label
+        self._label = QLabel(self._text_off, self)
+        self._label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self._label.move(width + 8, 0)
+        self._label.setFixedHeight(height)
+        self._label.mousePressEvent = self._label_click
+
+        # 动画
+        self._anim = QPropertyAnimation(self, b"circlePosition")  # noqa
+        self._anim.setTargetObject(self)
+        self._anim.setDuration(200)
+
+        self.stateChanged.connect(self.start_animation)
+        self.stateChanged.connect(self.update_label)
+
+    def _label_click(self, event):
+        self.toggle()
+
+    def update_label(self):
+        self._label.setText(self._text_on if self.isChecked() else self._text_off)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 背景
+        bg_rect = QRect(0, 0, self._width, self._height)
+        painter.setBrush(QBrush(self._checked_color if self.isChecked() else self._bg_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(bg_rect, self._radius, self._radius)
+
+        # 圆圈
+        circle_rect = QRect(int(self._circle_pos), 3, self._circle_diameter, self._circle_diameter)
+        painter.setBrush(QBrush(self._circle_color))
+        painter.drawEllipse(circle_rect)
+
+    def mousePressEvent(self, event):
+        if event.pos().x() <= self.width():
+            self.toggle()
+
+    def start_animation(self):
+        end = self._width - self._circle_diameter - 3 if self.isChecked() else 3
+        self._anim.stop()
+        self._anim.setStartValue(self._circle_pos)
+        self._anim.setEndValue(end)
+        self._anim.start()
+
+    def get_circle_pos(self):
+        return self._circle_pos
+
+    def set_circle_pos(self, pos):
+        self._circle_pos = pos
+        self.update()
+
+    circlePosition = Property(float, get_circle_pos, set_circle_pos)  # noqa
+
+
+class FormWidget(QWidget):
+    def __init__(self, name: str, ui_fields: dict, parent = None):
+        super().__init__(parent=parent)
+        self.name = name
+        self.ui_fields: dict = ui_fields
+
+        self.form_layout = QFormLayout()
+        self.form_fields: dict[str, Union[QLineEdit, QComboBox, QCheckBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox]] = {}
+        self.init_ui()
+        self.setLayout(self.form_layout)
+
+    def init_ui(self):
+        """
+        :param config: dict 配置原始数据
+        :param ui_fields: dict 配置 UI 渲染描述
+            {
+                "username": {"label": "用户名", "type": "str"},
+                "password": {"label": "密码", "type": "password"},
+                "timeout": {"label": "超时时间", "type": "int", "kwargs": {"min": 0, "max": 100}},
+                "note": {"label": "备注", "type": "text"},
+                "env": {"label": "环境", "type": "select", "options": ["dev", "test", "prod"]},
+                "sex": {"label": "性别", "type": "select", "options": {"男": "M", "女": "F"}},
+            }
+        """
+        for key, field in self.ui_fields.items():
+            label = field.get("label", key)
+            field_type = field.get("type", "str")
+            kwargs = field.get("kwargs", {})
+
+            if field_type == "bool":
+                widget = QSwitch()
+            elif field_type == "text":
+                widget = QTextEdit()
+                widget.setPlaceholderText(kwargs.get("placeholder", "请输入%s" % label))
+            elif field_type == "int":
+                widget = QSpinBox()
+                widget.setMinimum(kwargs.get("min", -999999))
+                widget.setMaximum(kwargs.get("max", 999999))
+                widget.setSingleStep(kwargs.get("step", 1))
+            elif field_type == "float":
+                widget = QDoubleSpinBox()
+                widget.setDecimals(kwargs.get("decimals", 1))
+                widget.setMinimum(kwargs.get("min", -999999.0))
+                widget.setMaximum(kwargs.get("max", 999999.0))
+                widget.setSingleStep(kwargs.get("step", 0.1))
+            elif field_type == "select":
+                widget = QComboBox()
+                options = kwargs.get("options", [])
+                if options:
+                    if isinstance(options, list):
+                        for value in options:
+                            widget.addItem(value, value)
+                    elif isinstance(options, dict):
+                        for text, value in options.items():
+                            widget.addItem(text, value)
+                widget.setPlaceholderText(kwargs.get("placeholder", "请选择%s" % label))
+            elif field_type == "password" or "password" in key or "token" in key or "secret" in key:
+                widget = QLineEdit()
+                widget.setEchoMode(QLineEdit.EchoMode.Password)
+            elif field_type == "font" or ("font" in key and "family" in key):
+                widget = QFontComboBox()
+                widget.setPlaceholderText(kwargs.get("placeholder", "请选择%s" % label))
+            else:
+                widget = QLineEdit()
+                widget.setPlaceholderText(kwargs.get("placeholder", "请输入%s" % label))
+
+            widget.setDisabled(kwargs.get("disabled", False))
+
+            self.form_layout.addRow(label, widget)
+            self.form_fields[key] = widget
+
+    def refresh_config(self, config: dict):
+        for key, widget in self.form_fields.items():
+            if isinstance(widget, QLineEdit):
+                widget.setText(config.get(key, ""))
+            elif isinstance(widget, QTextEdit):
+                widget.setPlainText(config.get(key, ""))
+            elif isinstance(widget, QComboBox):
+                index = widget.findData(config.get(key))
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+            elif isinstance(widget, QSpinBox):
+                widget.setValue(int(config.get(key, "0")))
+            elif isinstance(widget, QDoubleSpinBox):
+                widget.setValue(float(config.get(key, "0.0")))
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(config.get(key, False))
+            elif isinstance(widget, QFontComboBox):
+                widget.setCurrentFont(config.get(key, ""))
+
+    def get_config(self) -> dict:
+        config = {}
+        for key, widget in self.form_fields.items():
+            if isinstance(widget, QLineEdit):
+                config[key] = widget.text()
+            elif isinstance(widget, QTextEdit):
+                config[key] = widget.toPlainText()
+            elif isinstance(widget, QComboBox):
+                config[key] = widget.currentData()
+            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                config[key] = widget.value()
+            elif isinstance(widget, QCheckBox):
+                config[key] = widget.isChecked()
+            elif isinstance(widget, QFontComboBox):
+                config[key] = widget.currentFont().family()
+        return config
 
 
 class CustomCompleter(QCompleter):
