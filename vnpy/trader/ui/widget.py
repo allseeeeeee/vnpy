@@ -286,7 +286,8 @@ class SymbolCompleter:
         self.filter_contracts.clear()
 
         for c in all_contracts:
-            if text in c.symbol.lower() or text in c.name.lower():
+            symbol_keywords = [c.symbol.lower(), f"{c.symbol.lower()}.{c.exchange.value.lower()}", c.name.lower()]
+            if any(text in keyword for keyword in symbol_keywords):
                 key = f"{c.symbol}.{c.exchange.value}" if self.vt_mode else c.symbol
                 key = f"{key} {c.name}" if c.symbol != c.name else key
                 matches.append(key)
