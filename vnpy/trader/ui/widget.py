@@ -256,10 +256,11 @@ class CustomCompleter(QCompleter):
 
 
 class SymbolCompleter:
-    def __init__(self, line_edit: QLineEdit, get_all_contracts: Callable[[], list], on_symbol_selected: Callable[[ContractData], None] = None, parent: QWidget = None):
+    def __init__(self, line_edit: QLineEdit, get_all_contracts: Callable[[], list], on_symbol_selected: Callable[[ContractData], None] = None, vt_mode: bool = False, parent: QWidget = None):
         self.line_edit = line_edit
         self.get_all_contracts = get_all_contracts
         self.on_symbol_selected = on_symbol_selected
+        self.vt_mode = vt_mode
 
         self.model = QStringListModel()
         self.completer = CustomCompleter(parent)
@@ -286,7 +287,8 @@ class SymbolCompleter:
 
         for c in all_contracts:
             if text in c.symbol.lower() or text in c.name.lower():
-                key = f"{c.symbol} {c.name}" if c.symbol != c.name else c.symbol
+                key = f"{c.symbol}.{c.exchange.value}" if self.vt_mode else c.symbol
+                key = f"{key} {c.name}" if c.symbol != c.name else key
                 matches.append(key)
                 self.filter_contracts[key] = c
                 self.filter_contracts[c.symbol] = c  # 允许用户只选 symbol
@@ -296,7 +298,7 @@ class SymbolCompleter:
     def on_activated(self, selected: str):
         contract = self.filter_contracts.get(selected)
         if contract:
-            QTimer.singleShot(0, lambda: self.line_edit.setText(contract.symbol))
+            QTimer.singleShot(0, lambda: self.line_edit.setText(contract.vt_symbol if self.vt_mode else contract.symbol))
             if self.on_symbol_selected:
                 QTimer.singleShot(0, lambda: self.on_symbol_selected(contract))
 
