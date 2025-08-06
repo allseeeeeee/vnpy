@@ -9,8 +9,9 @@ from typing import cast, Any, Callable, Union
 from copy import copy
 
 from PySide6.QtGui import QColor, QPainter, QBrush
-from PySide6.QtCore import QStringListModel, QTimer, Qt, QPropertyAnimation, QRect, Property
-from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget, QCheckBox, QLabel, QFormLayout, QComboBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox
+from PySide6.QtCore import QStringListModel, QTimer, Qt, QPropertyAnimation, QRect, Property, QDate, QTime, QDateTime
+from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget, QCheckBox, QLabel, QFormLayout, QComboBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox, QHBoxLayout, \
+    QPushButton, QVBoxLayout, QDateTimeEdit, QDateEdit, QTimeEdit
 from tzlocal import get_localzone_name
 from datetime import datetime
 from importlib import metadata
@@ -135,13 +136,13 @@ class QSwitch(QCheckBox):
 
 
 class FormWidget(QWidget):
-    def __init__(self, name: str, ui_fields: dict, parent = None):
+    def __init__(self, title: str, ui_fields: dict, parent = None):
         super().__init__(parent=parent)
-        self.name = name
+        self.title = title
         self.ui_fields: dict = ui_fields
 
         self.form_layout = QFormLayout()
-        self.form_fields: dict[str, Union[QLineEdit, QComboBox, QCheckBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox]] = {}
+        self.form_fields: dict[str, Union[QLineEdit, QComboBox, QCheckBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox, QDateTimeEdit]] = {}
         self.init_ui()
         self.setLayout(self.form_layout)
 
@@ -152,55 +153,103 @@ class FormWidget(QWidget):
             {
                 "username": {"label": "用户名", "type": "str"},
                 "password": {"label": "密码", "type": "password"},
-                "timeout": {"label": "超时时间", "type": "int", "kwargs": {"min": 0, "max": 100}},
+                "timeout": {"label": "超时时间", "type": "int", "min": 0, "max": 100},
                 "note": {"label": "备注", "type": "text"},
                 "env": {"label": "环境", "type": "select", "options": ["dev", "test", "prod"]},
                 "sex": {"label": "性别", "type": "select", "options": {"男": "M", "女": "F"}},
             }
         """
         for key, field in self.ui_fields.items():
-            label = field.get("label", key)
-            field_type = field.get("type", "str")
-            kwargs = field.get("kwargs", {})
+            if isinstance(field, dict):
+                label = field.get("label", key)
+                value = field.get("value", None)
+                field_type = field.get("type", "str")
+            else:
+                field_type = type(field).__name__
+                label = f"{key}({field_type})"
+                value = field
 
             if field_type == "bool":
                 widget = QSwitch()
+                if value is not None:
+                    widget.setChecked(bool(value))
+
             elif field_type == "text":
                 widget = QTextEdit()
-                widget.setPlaceholderText(kwargs.get("placeholder", "请输入%s" % label))
+                widget.setPlaceholderText(field.get("placeholder", "请输入%s" % label))
+                if value is not None:
+                    widget.setText(str(value))
+
             elif field_type == "int":
                 widget = QSpinBox()
-                widget.setMinimum(kwargs.get("min", -999999))
-                widget.setMaximum(kwargs.get("max", 999999))
-                widget.setSingleStep(kwargs.get("step", 1))
+                widget.setMinimum(field.get("min", -999999))
+                widget.setMaximum(field.get("max", 999999))
+                widget.setSingleStep(field.get("step", 1))
+                if value is not None:
+                    widget.setValue(int(value))
+
             elif field_type == "float":
                 widget = QDoubleSpinBox()
-                widget.setDecimals(kwargs.get("decimals", 1))
-                widget.setMinimum(kwargs.get("min", -999999.0))
-                widget.setMaximum(kwargs.get("max", 999999.0))
-                widget.setSingleStep(kwargs.get("step", 0.1))
+                widget.setDecimals(field.get("decimals", 1))
+                widget.setMinimum(field.get("min", -999999.0))
+                widget.setMaximum(field.get("max", 999999.0))
+                widget.setSingleStep(field.get("step", 0.1))
+                if value is not None:
+                    widget.setValue(float(value))
+
+            elif field_type == "date":
+                widget = QDateEdit()
+                if value is not None:
+                    widget.setDate(QDate.fromString(value, "yyyy-MM-dd"))
+            elif field_type == "time":
+                widget = QTimeEdit()
+                if value is not None:
+                    widget.setTime(QTime.fromString(value, "HH:mm:ss"))
+            elif field_type == "datetime":
+                widget = QDateTimeEdit()
+                if value is not None:
+                    widget.setDateTime(QDateTime.fromString(value, "yyyy-MM-dd HH:mm:ss"))
+
             elif field_type == "select":
                 widget = QComboBox()
-                options = kwargs.get("options", [])
+                options = field.get("options", None)
                 if options:
-                    if isinstance(options, list):
-                        for value in options:
-                            widget.addItem(value, value)
-                    elif isinstance(options, dict):
-                        for text, value in options.items():
-                            widget.addItem(text, value)
-                widget.setPlaceholderText(kwargs.get("placeholder", "请选择%s" % label))
-            elif field_type == "password" or "password" in key or "token" in key or "secret" in key:
-                widget = QLineEdit()
-                widget.setEchoMode(QLineEdit.EchoMode.Password)
-            elif field_type == "font" or ("font" in key and "family" in key):
+                    _options = options() if isinstance(options, Callable) else options
+                    if isinstance(_options, list):
+                        for item in _options:
+                            widget.addItem(item, item)
+                    elif isinstance(_options, dict):
+                        for text, item in _options.items():
+                            widget.addItem(text, item)
+
+                index = widget.findData(value) if value is not None else -1
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+
+                widget.setPlaceholderText(field.get("placeholder", "请选择%s" % label))
+
+            elif field_type == "font" or ("font" in key.lower() and "family" in key.lower()):
                 widget = QFontComboBox()
-                widget.setPlaceholderText(kwargs.get("placeholder", "请选择%s" % label))
+                widget.setPlaceholderText(field.get("placeholder", "请选择%s" % label))
+
+                index = widget.findData(value) if value is not None else -1
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+
             else:
                 widget = QLineEdit()
-                widget.setPlaceholderText(kwargs.get("placeholder", "请输入%s" % label))
+                widget.setPlaceholderText(field.get("placeholder", "请输入%s" % label))
 
-            widget.setDisabled(kwargs.get("disabled", False))
+                if field_type == "password" or "password" in key.lower() or "token" in key.lower() or "secret" in key.lower():
+                    widget.setEchoMode(QLineEdit.EchoMode.Password)
+
+                if value is not None:
+                    widget.setText(str(value))
+
+            widget.setDisabled(field.get("disabled", False))
+            tips = field.get("tips", "")
+            if tips:
+                widget.setToolTip(tips)
 
             self.form_layout.addRow(label, widget)
             self.form_fields[key] = widget
@@ -223,6 +272,12 @@ class FormWidget(QWidget):
                 widget.setChecked(config.get(key, False))
             elif isinstance(widget, QFontComboBox):
                 widget.setCurrentFont(config.get(key, ""))
+            elif isinstance(widget, QDateEdit):
+                widget.setDate(QDate.fromString(config.get(key, ""), "yyyy-MM-dd"))
+            elif isinstance(widget, QTimeEdit):
+                widget.setTime(QTime.fromString(config.get(key, ""), "HH:mm:ss"))
+            elif isinstance(widget, QDateTimeEdit):
+                widget.setDateTime(QDateTime.fromString(config.get(key, ""), "yyyy-MM-dd HH:mm:ss"))
 
     def get_config(self) -> dict:
         config = {}
@@ -239,6 +294,12 @@ class FormWidget(QWidget):
                 config[key] = widget.isChecked()
             elif isinstance(widget, QFontComboBox):
                 config[key] = widget.currentFont().family()
+            elif isinstance(widget, QDateEdit):
+                config[key] = widget.date().toString("yyyy-MM-dd")
+            elif isinstance(widget, QTimeEdit):
+                config[key] = widget.time().toString("HH:mm:ss")
+            elif isinstance(widget, QDateTimeEdit):
+                config[key] = widget.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         return config
 
 
@@ -286,10 +347,10 @@ class SymbolCompleter:
         self.filter_contracts.clear()
 
         for c in all_contracts:
-            symbol_keywords = [c.symbol.lower(), f"{c.symbol.lower()}.{c.exchange.value.lower()}", c.name.lower()]
+            symbol_keywords = [c.symbol.lower(), f"{c.symbol.lower()}.{c.exchange.value.lower()}", c.title.lower()]
             if any(text in keyword for keyword in symbol_keywords):
                 key = f"{c.symbol}.{c.exchange.value}" if self.vt_mode else c.symbol
-                key = f"{key} {c.name}" if c.symbol != c.name else key
+                key = f"{key} {c.title}" if c.symbol != c.title else key
                 matches.append(key)
                 self.filter_contracts[key] = c
                 self.filter_contracts[c.symbol] = c  # 允许用户只选 symbol
@@ -304,6 +365,36 @@ class SymbolCompleter:
                 QTimer.singleShot(0, lambda: self.on_symbol_selected(contract))
 
 
+class FormDialog(QtWidgets.QDialog):
+    """
+    Base class for all dialogs.
+    """
+    def __init__(self, title: str, ui_fields: dict, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.form_widget: FormWidget = FormWidget(title, ui_fields, self)
+        self.get_config = self.form_widget.get_config
+        self.refresh_config = self.form_widget.refresh_config
+
+        # 按钮区域
+        self.button_layout = QHBoxLayout()
+        self.save_btn = QPushButton("保存")
+        self.save_btn.setMinimumWidth(120)
+        self.save_btn.clicked.connect(self.accept)
+        self.close_btn = QPushButton("关闭")
+        self.close_btn.setMinimumWidth(120)
+        self.close_btn.clicked.connect(self.reject)
+
+        self.button_layout.addStretch()
+        self.button_layout.addWidget(self.save_btn)
+        self.button_layout.addStretch()
+        self.button_layout.addWidget(self.close_btn)
+
+        # 总布局
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.form_widget)
+        main_layout.addLayout(self.button_layout)
+        self.setLayout(main_layout)
 
 
 class BaseCell(QtWidgets.QTableWidgetItem):
