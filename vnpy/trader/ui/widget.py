@@ -13,7 +13,7 @@ from PySide6.QtCore import QStringListModel, QTimer, Qt, QPropertyAnimation, QRe
 from PySide6.QtWidgets import QCompleter, QLineEdit, QWidget, QCheckBox, QLabel, QFormLayout, QComboBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox, QHBoxLayout, \
     QPushButton, QVBoxLayout, QDateTimeEdit, QDateEdit, QTimeEdit
 from tzlocal import get_localzone_name
-from datetime import datetime
+from datetime import datetime, date, time
 from importlib import metadata
 
 from .qt import QtCore, QtGui, QtWidgets, Qt
@@ -163,9 +163,11 @@ class FormWidget(QWidget):
             if isinstance(field, dict):
                 label = field.get("label", key)
                 value = field.get("value", None)
-                field_type = field.get("type", "str")
+                field_type = field.get("type", "str") if "type" in field \
+                            else type(value).__name__ if value is not None and type(value) in [str, int, float, bool, date, time, datetime] \
+                            else "str"
             else:
-                field_type = type(field).__name__
+                field_type = type(field).__name__ if field is not None and type(field) in [str, int, float, bool, date, time, datetime] else "str"
                 label = f"{key}({field_type})"
                 value = field
 
