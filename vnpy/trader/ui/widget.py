@@ -349,10 +349,10 @@ class SymbolCompleter:
         self.filter_contracts.clear()
 
         for c in all_contracts:
-            symbol_keywords = [c.symbol.lower(), f"{c.symbol.lower()}.{c.exchange.value.lower()}", c.title.lower()]
+            symbol_keywords = [c.symbol.lower(), f"{c.symbol.lower()}.{c.exchange.value.lower()}", c.name.lower()]
             if any(text in keyword for keyword in symbol_keywords):
                 key = f"{c.symbol}.{c.exchange.value}" if self.vt_mode else c.symbol
-                key = f"{key} {c.title}" if c.symbol != c.title else key
+                key = f"{key} {c.name}" if c.symbol != c.name else key
                 matches.append(key)
                 self.filter_contracts[key] = c
                 self.filter_contracts[c.symbol] = c  # 允许用户只选 symbol
