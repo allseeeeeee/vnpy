@@ -315,7 +315,9 @@ class CustomCompleter(QCompleter):
     def pathFromIndex(self, index):
         # 控制实际插入的内容 —— 只返回 symbol 部分
         text = self.model().data(index, Qt.ItemDataRole.DisplayRole)
-        return text.split(" ")[0].strip()  # 只返回 symbol
+        # 只返回 symbol
+
+        return text.rsplit(" ", 1)[0].strip()
 
 
 class SymbolCompleter:
@@ -337,6 +339,37 @@ class SymbolCompleter:
         self.completer.activated.connect(self.on_activated)
 
         self.filter_contracts: dict[str, ContractData] = {}
+
+        # 绑定焦点事件
+        self.install_focus_hooks()
+
+    def install_focus_hooks(self):
+        """给 QLineEdit 动态绑定焦点事件"""
+        old_focus_in = self.line_edit.focusInEvent
+        old_focus_out = self.line_edit.focusOutEvent
+
+        def focus_in(event):
+            if self.vt_mode:
+                text = self.line_edit.text()
+                if "." in text:
+                    self.line_edit.setText(text.split(".")[0])  # 去掉 .exchange
+                # 强制展开下拉提示
+                self.on_text_edited(self.line_edit.text())
+                self.completer.complete()
+            old_focus_in(event)
+
+        def focus_out(event):
+            if self.vt_mode:
+                text = self.line_edit.text()
+                # 如果能匹配到合约，自动补全 .exchange
+                for c in self.get_all_contracts():
+                    if text.lower() == c.symbol.lower():
+                        self.line_edit.setText(f"{c.symbol}.{c.exchange.value}")
+                        break
+            old_focus_out(event)
+
+        self.line_edit.focusInEvent = focus_in
+        self.line_edit.focusOutEvent = focus_out
 
     def on_text_edited(self, text: str):
         text = text.strip().lower()
