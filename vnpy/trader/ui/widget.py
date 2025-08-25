@@ -263,6 +263,9 @@ class FormWidget(QWidget):
             else:
                 widget = QLineEdit()
                 widget.setPlaceholderText(field.get("placeholder", "请输入%s" % label))
+                vt_symbol = field.get("vt_symbol", None)
+                if vt_symbol:
+                    widget._symbolCompleter = SymbolCompleter(widget, field.get("options"), vt_mode=True)
 
                 if field_type == "password" or "password" in key.lower() or "token" in key.lower() or "secret" in key.lower():
                     widget.setEchoMode(QLineEdit.EchoMode.Password)
@@ -444,7 +447,7 @@ class FormDialog(QtWidgets.QDialog):
     """
     Base class for all dialogs.
     """
-    def __init__(self, title: str, ui_fields: dict, parent: QWidget = None) -> None:
+    def __init__(self, title: str, ui_fields: dict, accept_text: str = "确定", parent: QWidget = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.form_widget: FormWidget = FormWidget(title, ui_fields, parent=self)
@@ -453,15 +456,15 @@ class FormDialog(QtWidgets.QDialog):
 
         # 按钮区域
         self.button_layout = QHBoxLayout()
-        self.save_btn = QPushButton("保存")
-        self.save_btn.setMinimumWidth(120)
-        self.save_btn.clicked.connect(self.accept)
+        self.accept_btn = QPushButton(accept_text)
+        self.accept_btn.setMinimumWidth(120)
+        self.accept_btn.clicked.connect(self.accept)
         self.close_btn = QPushButton("关闭")
         self.close_btn.setMinimumWidth(120)
         self.close_btn.clicked.connect(self.reject)
 
         self.button_layout.addStretch()
-        self.button_layout.addWidget(self.save_btn)
+        self.button_layout.addWidget(self.accept_btn)
         self.button_layout.addStretch()
         self.button_layout.addWidget(self.close_btn)
 
