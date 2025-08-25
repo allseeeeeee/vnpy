@@ -136,10 +136,12 @@ class QSwitch(QCheckBox):
 
 
 class FormWidget(QWidget):
-    def __init__(self, title: str, ui_fields: dict, parent = None):
+    def __init__(self, title: str, ui_fields: dict, hidden: bool = False, parent = None):
         super().__init__(parent=parent)
         self.title = title
         self.ui_fields: dict = ui_fields
+        self.hidden = hidden
+        self.hidden_items: list[tuple[QWidget, QWidget]] = []
 
         self.form_layout = QFormLayout()
         self.form_fields: dict[str, Union[QLineEdit, QComboBox, QCheckBox, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox, QDateTimeEdit]] = {}
@@ -171,16 +173,22 @@ class FormWidget(QWidget):
                 label = f"{key}({field_type})"
                 value = field
 
+            label_widget = QLabel(label)
+
             if field_type == "bool":
                 widget = QSwitch()
                 if value is not None:
                     widget.setChecked(bool(value))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             elif field_type == "text":
                 widget = QTextEdit()
                 widget.setPlaceholderText(field.get("placeholder", "请输入%s" % label))
                 if value is not None:
                     widget.setText(str(value))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             elif field_type == "int":
                 widget = QSpinBox()
@@ -189,6 +197,8 @@ class FormWidget(QWidget):
                 widget.setSingleStep(field.get("step", 1))
                 if value is not None:
                     widget.setValue(int(value))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             elif field_type == "float":
                 widget = QDoubleSpinBox()
@@ -198,19 +208,27 @@ class FormWidget(QWidget):
                 widget.setSingleStep(field.get("step", 0.1))
                 if value is not None:
                     widget.setValue(float(value))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             elif field_type == "date":
                 widget = QDateEdit()
                 if value is not None:
                     widget.setDate(QDate.fromString(value, "yyyy-MM-dd"))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
             elif field_type == "time":
                 widget = QTimeEdit()
                 if value is not None:
                     widget.setTime(QTime.fromString(value, "HH:mm:ss"))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
             elif field_type == "datetime":
                 widget = QDateTimeEdit()
                 if value is not None:
                     widget.setDateTime(QDateTime.fromString(value, "yyyy-MM-dd HH:mm:ss"))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             elif field_type == "select":
                 widget = QComboBox()
@@ -227,6 +245,8 @@ class FormWidget(QWidget):
                 index = widget.findData(value) if value is not None else -1
                 if index >= 0:
                     widget.setCurrentIndex(index)
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
                 widget.setPlaceholderText(field.get("placeholder", "请选择%s" % label))
 
@@ -237,6 +257,8 @@ class FormWidget(QWidget):
                 index = widget.findData(value) if value is not None else -1
                 if index >= 0:
                     widget.setCurrentIndex(index)
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             else:
                 widget = QLineEdit()
@@ -247,13 +269,15 @@ class FormWidget(QWidget):
 
                 if value is not None:
                     widget.setText(str(value))
+                elif self.hidden:
+                    self.add_hidden_items(label_widget, widget)
 
             widget.setDisabled(field.get("disabled", False))
             tips = field.get("tips", "")
             if tips:
                 widget.setToolTip(tips)
 
-            self.form_layout.addRow(label, widget)
+            self.form_layout.addRow(label_widget, widget)
             self.form_fields[key] = widget
 
     def refresh_config(self, config: dict):
@@ -303,6 +327,22 @@ class FormWidget(QWidget):
             elif isinstance(widget, QDateTimeEdit):
                 config[key] = widget.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         return config
+
+    def add_hidden_items(self, label_widget, widget):
+        label_widget.hide()
+        widget.hide()
+        self.hidden_items.append((label_widget, widget))
+
+    def toggle_hidden_items(self):
+        for label, widget in self.hidden_items:
+            if self.hidden:
+                label.show()
+                widget.show()
+            else:
+                label.hide()
+                widget.hide()
+
+        self.hidden = not self.hidden
 
 
 class CustomCompleter(QCompleter):
@@ -407,7 +447,7 @@ class FormDialog(QtWidgets.QDialog):
     def __init__(self, title: str, ui_fields: dict, parent: QWidget = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.form_widget: FormWidget = FormWidget(title, ui_fields, self)
+        self.form_widget: FormWidget = FormWidget(title, ui_fields, parent=self)
         self.get_config = self.form_widget.get_config
         self.refresh_config = self.form_widget.refresh_config
 
