@@ -467,6 +467,7 @@ class FormDialog(QtWidgets.QDialog):
         self.button_layout.addWidget(self.accept_btn)
         self.button_layout.addStretch()
         self.button_layout.addWidget(self.close_btn)
+        self.button_layout.addStretch()
 
         # 总布局
         main_layout = QVBoxLayout()
